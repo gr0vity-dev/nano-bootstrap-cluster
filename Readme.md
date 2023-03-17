@@ -13,10 +13,10 @@ This repository contains a Python script (nanobeta_bootstrap_cluster.py) that au
 - Asynchronous execution for efficient management of multiple nodes
 
 ```bash
-python3 nanobeta_bootstrap_cluster.py --create "nanocurrency/nano:V24.0" 5 --create "nanocurrency/nano:V25.0DB24" 10
-python3 nanobeta_bootstrap_cluster.py --stop
-python3 nanobeta_bootstrap_cluster.py --restart
-python3 nanobeta_bootstrap_cluster.py --delete
+python3 g_boot_cluster.py --create "nanocurrency/nano:V24.0" 5 --create "nanocurrency/nano:V25.0DB24" 10
+python3 g_boot_cluster.py --stop
+python3 g_boot_cluster.py --restart
+python3 g_boot_cluster.py --delete
 ```
 
 This project simplifies the process of managing a cluster of bootstrapping Nano beta network nodes, making it easier for developers and testers to experiment with different node versions and configurations.
