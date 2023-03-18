@@ -13,7 +13,8 @@ This repository contains a Python script (nanobeta_bootstrap_cluster.py) that au
 - Asynchronous execution for efficient management of multiple nodes
 
 ```bash
-python3 g_boot_cluster.py --create "nanocurrency/nano:V24.0" 5 --create "nanocurrency/nano:V25.0DB24" 10
+python3 g_boot_cluster.py --create {docker_tag_1} {node_count_1} {optional_zone_1} {docker_tag_2} {node_count_2} ...
+python3 g_boot_cluster.py --create "nanocurrency/nano:V24.0" 5 "europe-west6-a" "nanocurrency/nano:V25.0DB24" 10
 python3 g_boot_cluster.py --stop
 python3 g_boot_cluster.py --restart
 python3 g_boot_cluster.py --delete

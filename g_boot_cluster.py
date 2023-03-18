@@ -2,6 +2,22 @@
 import argparse
 import json
 import asyncio
+import random
+
+
+def log_to_console(stdout, stderr):
+    if stderr and len(stderr) > 0:
+        print(stderr.decode("utf-8"))
+    elif stdout:
+        print(stdout.decode("utf-8"))
+
+
+async def get_zones():
+    command = ["gcloud", "compute", "zones", "list", "--format", "json"]
+    stdout, stderr = await async_subprocess_run(command)
+    zones_data = json.loads(stdout)
+    zones = [zone["name"] for zone in zones_data]
+    return zones
 
 
 async def async_subprocess_run(command):
@@ -12,6 +28,12 @@ async def async_subprocess_run(command):
     return stdout, stderr
 
 
+async def list_instances_console():
+    command = ["gcloud", "compute", "instances", "list"]
+    stdout, stderr = await async_subprocess_run(command)
+    log_to_console(stdout, stderr)
+
+
 async def list_instances_async():
     command = ["gcloud", "compute", "instances", "list", "--format", "json"]
     stdout, stderr = await async_subprocess_run(command)
@@ -20,26 +42,32 @@ async def list_instances_async():
 
 
 def escape_docker_tag(docker_tag):
-    return docker_tag.replace('/', '-').replace(':', '-').replace('.',
-                                                                  '-').lower()
+    return docker_tag.replace('/', '-').replace(':',
+                                                '-').replace('.',
+                                                             '-').lower()[:50]
 
 
 def generate_instance_names(docker_tag, num_instances):
     safe_docker_tag = escape_docker_tag(docker_tag)
-    return [f"{safe_docker_tag}-instance-{i}" for i in range(num_instances)]
+    return [f"{safe_docker_tag}-i-{i}" for i in range(num_instances)]
 
 
-async def create_instances_with_docker_tag(docker_tag, num_instances):
+async def create_instances_with_docker_tag(docker_tag,
+                                           num_instances,
+                                           zone=None):
     instance_names = generate_instance_names(docker_tag, num_instances)
     create_tasks = [
-        create_instance(docker_tag, instance_name)
+        create_instance(docker_tag, instance_name, zone)
         for instance_name in instance_names
     ]
-    await asyncio.gather(*create_tasks)
+    results = await asyncio.gather(*create_tasks)
+    # Count the number of successful deletions
+    success_count = sum(1 for result in results if result)
+    print(f"{success_count} instances created out of {len(create_tasks)}")
 
 
-async def create_instance(docker_tag, instance_name):
-    zone = "europe-central2-a"
+async def create_instance(docker_tag, instance_name, zone=None):
+    zone = random.choice(await get_zones()) if zone is None else zone
     startup_script_name = f"startup-script_{escape_docker_tag(docker_tag)}.sh"
 
     startup_script = f"""#!/bin/bash
@@ -62,6 +90,8 @@ async def create_instance(docker_tag, instance_name):
     ]
     print(f"Creating instance {instance_name} in zone {zone}...")
     stdout, stderr = await async_subprocess_run(command)
+    log_to_console(stdout, stderr)
+    return True
 
 
 async def stop_instance(instance):
@@ -72,12 +102,16 @@ async def stop_instance(instance):
         "gcloud", "compute", "instances", "stop", instance_name, "--zone", zone
     ]
     stdout, stderr = await async_subprocess_run(command)
+    log_to_console(stdout, stderr)
+    return True
 
 
 async def stop_instances():
     instances = await list_instances_async()
     stop_tasks = [stop_instance(instance) for instance in instances]
-    await asyncio.gather(*stop_tasks)
+    results = await asyncio.gather(*stop_tasks)
+    success_count = sum(1 for result in results if result)
+    print(f"{success_count} instances stopped out of {len(stop_tasks)}")
 
 
 async def delete_instance(instance):
@@ -89,12 +123,18 @@ async def delete_instance(instance):
         zone, "--quiet"
     ]
     stdout, stderr = await async_subprocess_run(command)
+    log_to_console(stdout, stderr)
+    return True
 
 
 async def delete_instances():
     instances = await list_instances_async()
     delete_tasks = [delete_instance(instance) for instance in instances]
-    await asyncio.gather(*delete_tasks)
+    results = await asyncio.gather(*delete_tasks)
+
+    # Count the number of successful deletions
+    success_count = sum(1 for result in results if result)
+    print(f"{success_count} instances deleted out of {len(delete_tasks)}")
 
 
 async def restart_instance(instance):
@@ -106,6 +146,8 @@ async def restart_instance(instance):
         zone
     ]
     stdout, stderr = await async_subprocess_run(command)
+    log_to_console(stdout, stderr)
+    return True
 
 
 async def restart_instances():
@@ -114,7 +156,33 @@ async def restart_instances():
         restart_instance(instance) for instance in instances
         if instance["status"] == "TERMINATED"
     ]
-    await asyncio.gather(*restart_tasks)
+    results = await asyncio.gather(*restart_tasks)
+    # Count the number of successful deletions
+    success_count = sum(1 for result in results if result)
+    print(f"{success_count} instances restarted out of {len(restart_tasks)}")
+
+
+def process_create_args(create_args):
+    parsed_args = []
+    i = 0
+    while i < len(create_args):
+        docker_tag = create_args[i]
+        num_instances = int(create_args[i + 1])
+        i += 2
+
+        if i < len(create_args) and not create_args[i].isdigit():
+            zone = create_args[i]
+            i += 1
+        else:
+            zone = None
+
+        parsed_args.append({
+            "docker_tag": docker_tag,
+            "num_instances": num_instances,
+            "zone": zone
+        })
+
+    return parsed_args
 
 
 def main():
@@ -134,6 +202,9 @@ def main():
     parser.add_argument("--delete",
                         action="store_true",
                         help="Delete all instances")
+    parser.add_argument("--list",
+                        action="store_true",
+                        help="List current instances")
     args = parser.parse_args()
 
     asyncio.run(main_async(args))
@@ -141,10 +212,11 @@ def main():
 
 async def main_async(args):
     if args.create:
+        parsed_create_args = process_create_args(args.create)
         create_tasks = [
-            create_instances_with_docker_tag(args.create[i],
-                                             int(args.create[i + 1]))
-            for i in range(0, len(args.create), 2)
+            create_instances_with_docker_tag(arg["docker_tag"],
+                                             arg["num_instances"], arg["zone"])
+            for arg in parsed_create_args
         ]
         await asyncio.gather(*create_tasks)
 
@@ -156,6 +228,9 @@ async def main_async(args):
 
     if args.delete:
         await delete_instances()
+
+    if args.list:
+        await list_instances_console()
 
 
 if __name__ == "__main__":
