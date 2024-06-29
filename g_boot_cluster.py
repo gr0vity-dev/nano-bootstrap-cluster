@@ -42,14 +42,11 @@ async def list_instances_async():
 
 
 def escape_docker_tag(docker_tag):
-    return docker_tag.replace('/', '-').replace(':',
-                                                '-').replace('.',
-                                                             '-').lower()[:50]
-
+    return docker_tag.replace('/', '-').replace(':', '-').replace('.', '-').replace('_', '-').lower()[:50]
 
 def generate_instance_names(docker_tag, num_instances):
     safe_docker_tag = escape_docker_tag(docker_tag)
-    return [f"{safe_docker_tag}-i-{i}" for i in range(num_instances)]
+    return [f"{safe_docker_tag}-{i}" for i in range(num_instances)]
 
 
 async def create_instances_with_docker_tag(docker_tag,
@@ -75,7 +72,7 @@ async def create_instance(docker_tag, instance_name, zone=None):
     apt-get install -y docker.io
     systemctl start docker
     systemctl enable docker
-    docker run --restart=unless-stopped -d -p 54000:54000 -p 127.0.0.1:55000:55000 -p 127.0.0.1:57000:57000 -v nano:/root --name nanobeta {docker_tag} nano_node daemon --network=beta
+    docker run --restart=unless-stopped -d -p 54000:54000 -p 127.0.0.1:55000:55000 -p 127.0.0.1:57000:57000 -v nano:/root --name nanobeta {docker_tag} nano_node daemon --network=beta --config node.rocksdb.enable=true
     """
 
     with open(startup_script_name, "w") as f:
@@ -85,7 +82,7 @@ async def create_instance(docker_tag, instance_name, zone=None):
         "gcloud", "compute", "instances", "create", instance_name,
         "--metadata-from-file", f"startup-script={startup_script_name}",
         "--scopes", "default", "--image-family", "ubuntu-2204-lts",
-        "--image-project", "ubuntu-os-cloud", "--machine-type", "e2-small",
+        "--image-project", "ubuntu-os-cloud", "--machine-type", "n1-standard-1",
         "--zone", zone
     ]
     print(f"Creating instance {instance_name} in zone {zone}...")
@@ -187,8 +184,7 @@ def process_create_args(create_args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description=
-        "Betaboot: A tool for managing Google Cloud instances running Nano.")
+        description="Betaboot: A tool for managing Google Cloud instances running Nano.")
     parser.add_argument("--create",
                         nargs="+",
                         metavar=("TAG", "NUM_INSTANCES"),
